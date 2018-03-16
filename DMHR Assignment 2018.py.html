@@ -1,0 +1,767 @@
+
+# coding: utf-8
+
+# In[129]:
+
+
+#Preliminaries.
+
+import pandas as pd
+import numpy as np
+
+get_ipython().run_line_magic('matplotlib', 'inline')
+import matplotlib.pyplot as plt
+
+import datetime
+
+
+# In[202]:
+
+
+#Import files.
+
+practices_csv = 'https://s3.eu-west-2.amazonaws.com/dmhr-data/practices_Dec2015.csv'
+prescribing_csv = 'https://s3.eu-west-2.amazonaws.com/dmhr-data/prescribing_Dec2015.csv'
+demoinfo_csv = 'https://digital.nhs.uk/media/28273/Numbers-of-Patients-Registered-at-a-GP-Practice-Jan-2016-GP-Practice-and-quinary-age-groups/Any/gp-reg-patients-prac-quin-age'
+ONS_csv = 'https://s3.eu-west-2.amazonaws.com/dmhr-data/postcodes.csv'
+EDI_csv = 'https://s3.eu-west-2.amazonaws.com/dmhr-data/deprivation-by-postcode.csv'
+mortrate_csv = 'https://s3.eu-west-2.amazonaws.com/dmhr-data/NHSOF_1.1_I00656_D.csv'
+canadaFluTrends_txt = 'https://www.google.org/flutrends/about/data/flu/ca/data.txt'
+newzealandFluTrends_txt = 'https://www.google.org/flutrends/about/data/flu/nz/data.txt'
+
+practices_df = pd.read_csv(practices_csv, names=['Period', 'Practice', 'Practice name', 'Address 1', 'Address 2', 'Address 3', 'County', 'Postcode', 'Empty'])
+prescribing_df = pd.read_csv(prescribing_csv)
+demoinfo_df = pd.read_csv(demoinfo_csv)
+ONS_df = pd.read_csv(ONS_csv)
+EDI_df = pd.read_csv(EDI_csv)
+mortrate_df = pd.read_csv(mortrate_csv)
+canadaFluTrends_df = pd.read_csv(canadaFluTrends_txt, sep=',', header = 8)
+newzealandFluTrends_df = pd.read_csv(newzealandFluTrends_txt, sep=',', header = 8)
+
+
+# In[203]:
+
+
+#Rename column names in prescribing_df.
+
+prescribing_df.columns = ['SHA', 'PCT', 'Practice', 'BNF Code', 'BNF Name', 'Items', 'NIC', 'Act Cost', 'Quantity', 'Period', 'Empty']
+
+
+# # Assignment A
+
+# ### Question 1: Identify all GP practices and produce a table with the total number of prescriptions and their total actual cost (using the ACT COST column).
+
+# In[5]:
+
+
+#Merge practices_df and prescribing_df.
+merged = pd.merge(practices_df, prescribing_df, left_on='Practice', right_on='Practice')
+
+#Identify Bristol GP practices.
+bristol_data = merged.loc[merged['Postcode'].str.startswith('BS')]
+
+#Group bristol_data by 'Practice'.
+bristol_df1 = bristol_data.groupby(['Practice', 'Practice name'], as_index=False).sum()
+
+#Tabulate total number of prescriptions and total actual cost for each Bristol GP practice.
+bristol_df2 = pd.DataFrame({'Bristol GP Practice' : pd.Categorical(bristol_df1['Practice']),
+                            'Practice Name' : pd.Categorical(bristol_df1['Practice name']),
+                            'Total Number of Prescriptions' : pd.Series(bristol_df1['Items']),
+                            'Total Actual Cost' : pd.Series(bristol_df1['Act Cost'])})
+
+bristol_df2 = bristol_df2[['Bristol GP Practice', 'Practice Name', 'Total Number of Prescriptions', 'Total Actual Cost']]
+bristol_df2.head()
+
+
+# ### Question 2: Find the top ten most/least frequently prescribed medications across all practices. What is their total actual cost and how does that compare to the overall actual costs of each practice and of the entire city?
+
+# In[137]:
+
+
+#Group bristol_data by 'BNF Code' and BNF Name'.
+bristol_df3 = bristol_data.groupby(['BNF Code', 'BNF Name'], as_index=False).sum()
+
+#Calculate the top ten most/least frequently prescribed medications across all practices.
+bristol_df4 = pd.DataFrame({'BNF Code' : pd.Categorical(bristol_df3['BNF Code']),
+                            'BNF Name' : pd.Categorical(bristol_df3['BNF Name']),
+                            'Total Number of Prescriptions' : pd.Series(bristol_df3['Items']),
+                            'Total Actual Cost': pd.Series(bristol_df3['Act Cost'])})
+
+bristol_df4 = bristol_df4[['BNF Code', 'BNF Name', 'Total Number of Prescriptions', 'Total Actual Cost']]
+bristol_sorted = bristol_df4.sort_values('Total Number of Prescriptions', axis=0, ascending=False, kind='quicksort', na_position='last')
+
+bristol_top10 = bristol_sorted.head(10)
+bristol_top10
+
+
+# In[138]:
+
+
+bristol_bottom10 = bristol_sorted.tail(10)
+bristol_bottom10
+
+
+# In[315]:
+
+
+#Calculate the total actual cost of the top 10 and bottom 10 most prescribed medications.
+total_actcost_10 = bristol_top10['Total Actual Cost'].sum() + bristol_bottom10['Total Actual Cost'].sum()
+
+#Tabulate the values.
+totalactcost_10 = pd.DataFrame({'Position' : pd.Categorical(['Top 10 and Bottom 10']),
+                                'Total Actual Cost' : pd.Series(total_actcost_10)})
+
+#Calculate the total actual cost of medication in Bristol.
+bristol_total_actcost = bristol_df2['Total Actual Cost'].sum()
+
+
+# In[326]:
+
+
+#Create a scatter plot to compare the total actual cost of the top 10 and bottom 10 most prescribed medications with the overall actual costs of each practice.
+top_actcost = (bristol_df2['Bristol GP Practice'], bristol_df2['Total Actual Cost'])
+bristol_actcost = (totalactcost_10['Position'], totalactcost_10['Total Actual Cost'])
+
+data = (top_actcost, bristol_actcost)
+colours = ("blue", "red")
+groups = ("Bristol GP Practices", "Top 10 and Bottom 10") 
+
+
+fig = plt.figure(figsize=(8, 6))
+ax = fig.add_subplot(1, 1, 1, axisbg="1.0")
+ 
+for data, color, group in zip(data, colours, groups):
+    x, y = data
+    ax.scatter(x, y, alpha=0.8, c=color, edgecolors='none', s=30, label=group)
+    
+ax.set_xlabel("Bristol GP Practices",fontsize=12)
+ax.set_ylabel("Total Actual Cost",fontsize=12)
+ax.set_xticklabels([])
+
+plt.title('Scatter Plot: Total Actual Costs of Prescribed Medications Among Bristol GP Practices')
+plt.legend(loc=2)
+plt.show()
+
+
+# In[161]:
+
+
+#Tabulate the total actual cost of the top 10 and bottom 10 most prescribed medications with the overall actual cost of Bristol.
+totactcost = pd.DataFrame({'Level' : pd.Categorical(["Top 10 and Bottom 10", "National"]),
+                           'Total Actual Cost' : pd.Series([total_actcost_10, bristol_total_actcost])})
+
+totactcost = totactcost[['Level', 'Total Actual Cost']]
+totactcost
+
+
+# In[328]:
+
+
+#Create a bar chart to compare the total actual cost of the top 10 and bottom 10 most prescribed medications with the overall actual cost of Bristol.
+ax = totactcost[['Level', 'Total Actual Cost']].plot(kind='bar', x='Level', y='Total Actual Cost', title="Bar Chart: Total Actual Cost of Prescribed Medications", stacked=False, color=['red', 'royalblue'], figsize=(8,6), legend=True, fontsize=8)
+ax.set_xlabel("Level",fontsize=12)
+ax.set_ylabel("Total Actual Cost",fontsize=12)
+
+
+# ### Question 3: Find the top ten most expensive medications and calculate their actual cost.
+
+# In[150]:
+
+
+#Make a subset of bristol_data without '0' in 'Quantity'.
+bristol_data2 = bristol_data.loc[bristol_data['Quantity'] != 0]
+
+#Make a new column 'Cost Per Drug' in bristol_data2 and sort it in descending order.
+bristol_data2['Cost Per Drug'] = (bristol_data2['Act Cost'] / bristol_data2['Quantity']).round(2)
+bristol_sorted = bristol_data2.sort_values('Cost Per Drug', axis=0, ascending=False, kind='quicksort', na_position='last').drop_duplicates(subset=['BNF Code'], keep='first', inplace=False)
+
+#Calculate the top ten most expensive medications and calculate their actual cost.
+bristol_top10_cost = bristol_sorted.head(10)
+
+
+# In[151]:
+
+
+#Tabulate the values.
+bristol_df5 = pd.DataFrame({'BNF Code' : pd.Categorical(bristol_top10_cost['BNF Code']),
+                            'BNF Name' : pd.Categorical(bristol_top10_cost['BNF Name']),
+                            'Cost Per Drug' : pd.Series(bristol_top10_cost['Cost Per Drug']),
+                            'Actual Cost' : pd.Series(bristol_top10_cost['Act Cost'])})
+
+bristol_df5 = bristol_df5[['BNF Code', 'BNF Name', 'Cost Per Drug', 'Actual Cost']]
+bristol_df5
+
+
+# ### Question 4: How does prescribing (frequency and costs) in your city compare when using prescribing data from Cambridge as a reference?
+
+# In[39]:
+
+
+#Identify Cambridge GP practices.
+cambridge_data = merged.loc[merged['Postcode'].str.startswith('CB')]
+
+#Group cambridge_data by 'Practice'.
+cambridge_df1 = cambridge_data.groupby('Practice', as_index=False).sum()
+
+#Tabulate total number of prescriptions and total actual cost for each Cambridge GP practice.
+cambridge_df2 = pd.DataFrame({'Bristol GP Practice' : pd.Categorical(cambridge_df1['Practice']),
+                            'Total Number of Prescriptions' : pd.Series(cambridge_df1['Items']),
+                            'Total Actual Cost' : pd.Series(cambridge_df1['Act Cost'])})
+
+cambridge_df2 = cambridge_df2[['Bristol GP Practice', 'Total Number of Prescriptions', 'Total Actual Cost']]
+cambridge_df2.head()
+
+
+# In[40]:
+
+
+#Calculate the overall total number of prescriptions and total cost spent of Bristol and Cambridge GP practices.
+bristol_totalpres = sum(bristol_df2['Total Number of Prescriptions'])
+bristol_totalcost = sum(bristol_df2['Total Actual Cost'])
+
+cambridge_totalpres = sum(cambridge_df2['Total Number of Prescriptions'])
+cambridge_totalcost = sum(cambridge_df2['Total Actual Cost'])
+
+#Tabulate the values.
+total_sum = pd.DataFrame({'Cities' : pd.Categorical(["Bristol", "Cambridge"]),
+                          'Total Number of Prescriptions' : pd.Series([bristol_totalpres, cambridge_totalpres]),
+                          'Total Cost' : pd.Series([bristol_totalcost, cambridge_totalcost])})
+
+total_sum  = total_sum[['Cities', 'Total Number of Prescriptions', 'Total Cost']]
+total_sum
+
+
+# In[148]:
+
+
+#Create a bar chart to compare the total spendings of Bristol and Cambridge.
+ax1 = total_sum.plot(kind='bar', x='Cities', title="Bar Chart: Total Spendings For Bristol And Cambridge", stacked=False, color=['r', 'b'], figsize=(8,6), legend=True, fontsize=8)
+ax1.set_xlabel("Cities",fontsize=12)
+ax1.set_ylabel("Total",fontsize=12)
+ax1.legend(loc='upper right')
+
+
+# In[146]:
+
+
+#Create a scatter plot to compare the total spendings of each GP practice in Bristol and Cambridge.
+bristol_total = (bristol_df2['Total Number of Prescriptions'], bristol_df2['Total Actual Cost'])
+cambridge_total = (cambridge_df2['Total Number of Prescriptions'], cambridge_df2['Total Actual Cost'])
+ 
+data = (bristol_total, cambridge_total)
+colours = ("red", "blue")
+groups = ("Bristol", "Cambridge") 
+
+
+fig = plt.figure(figsize=(8, 6))
+ax2 = fig.add_subplot(1, 1, 1, axisbg="1.0")
+ 
+for data, color, group in zip(data, colours, groups):
+    x, y = data
+    ax2.scatter(x, y, alpha=0.8, c=color, edgecolors='none', s=30, label=group)
+    
+ax2.set_xlabel("Total Number of Prescriptions",fontsize=12)
+ax2.set_ylabel("Total Actual Cost",fontsize=12)
+
+plt.title('Scatter Plot: Total Spendings For Bristol And Cambridge GP Practices')
+plt.legend(loc=2)
+plt.show()
+
+
+# ### Question 5: Using SQL, produce a table that provides the number of GP practices per city, ordered in descending order.
+
+# In[233]:
+
+
+#Install pandasql.
+get_ipython().system('pip install pandasql')
+
+
+# In[476]:
+
+
+#SQL preliminaries.
+from pandasql import PandaSQL
+pdsql = PandaSQL()
+
+
+# In[483]:
+
+
+#Rename the column 'Address 3' to 'Address_3' in practices_df.
+practices_df = practices_df.rename(index=str, columns={"Address 3": "Address_3"})
+
+
+# In[486]:
+
+
+#SQL execution command to tabulate the number of GP practices per city, ordered in descending order.
+sql_data = """SELECT Address_3, COUNT(*) FROM practices_df GROUP BY Address_3 ORDER BY COUNT(*) DESC"""
+
+print (pdsql(sql_data).head())
+
+
+# # Assignment B
+
+# ### Question 1: Calculate the monthly total spending for each GP-practice.
+
+# In[43]:
+
+
+#Group merged dataframe by 'Practice' and 'Practice Name'.
+prescribing_df1 = merged.groupby(['Practice', 'Practice name'], as_index=False).sum()
+
+#Tabulate the monthly total spending for each GP practice.
+monthly_spending = pd.DataFrame({'Practice' : pd.Categorical(prescribing_df1['Practice']),
+                                 'Practice Name' : pd.Categorical(prescribing_df1['Practice name']),
+                                 'Total Cost Per Practice' : pd.Series(prescribing_df1['Act Cost'])})
+
+monthly_spending  = monthly_spending[['Practice', 'Practice Name', 'Total Cost Per Practice']]
+monthly_spending.head()
+
+
+# ### Question 2: Use the number of registered patients in each GP-practice to calculate the relative costs per patient.
+
+# In[16]:
+
+
+#Merge monthly_spending and demoinfo_df.
+merged2 = pd.merge(monthly_spending, demoinfo_df[['GP_PRACTICE_CODE', 'POSTCODE', 'Total_All']], left_on='Practice' , right_on='GP_PRACTICE_CODE')
+
+#Make a new column for 'COST_PER_PATIENT' in merged2.
+merged2['COST_PER_PATIENT'] = (merged2['Total Cost Per Practice'] / merged2['Total_All']).round(2)
+
+#Tabulate the total cost per patient for each GP practice.
+cost_per_patient = pd.DataFrame({'Practice' : pd.Categorical(merged2['GP_PRACTICE_CODE']),
+                                 'Practice Name' : pd.Categorical(merged2['Practice Name']),
+                                 'Total Cost Per Patient' : pd.Series(merged2['COST_PER_PATIENT'])})
+
+cost_per_patient = cost_per_patient[['Practice', 'Practice Name', 'Total Cost Per Patient']]
+cost_per_patient.head()
+
+
+# ### Question 3: Visualize the monthly total spending per registered patients for all GP-practices in a scatterplot, show a trend line, and visualize the data for your city within the national scatterplot.
+
+# In[17]:
+
+
+#Identify Bristol GP practices.
+bristol_data2 = merged2.loc[merged2['POSTCODE'].str.startswith('BS')]
+bristol_data2.head()
+
+
+# In[18]:
+
+
+#National data.
+x = merged2['Total Cost Per Practice']
+y = merged2['Total_All']
+
+#Bristol data.
+x_2 = bristol_data2['Total Cost Per Practice']
+y_2 = bristol_data2['Total_All']
+
+#Create scatter plot.
+fig = plt.figure(figsize=(8, 6))
+ax3 = fig.add_subplot(111)
+
+rects1 = ax3.scatter(x, y, color='royalblue')
+rects2 = ax3.scatter(x_2, y_2, color='red')
+fit = np.polyfit(x, y, deg=1)
+ax3.plot(x, fit[0] * x + fit[1], color='black')
+ax3.set_title('Scatter Plot: Monthly Total Spending Per Registered Patient')
+ax3.set_xlabel("Monthly Prescription Spending Per GP Practice",fontsize=12)
+ax3.set_ylabel("Total Number of Registered Patients",fontsize=12)
+ax3.legend((rects1, rects2), ('National', 'Bristol'), loc='lower right')
+
+max_x = max(merged2['Total Cost Per Practice'].max(), bristol_data2['Total Cost Per Practice'].max())
+max_y = max(merged2['Total_All'].max(), bristol_data2['Total_All'].max())
+ax3.set_xlim(0, max_x)
+ax3.set_ylim(0, max_y)
+
+
+# ### Question 4: Visualize the relative costs per patient of all national GP-practices in a histogram.
+
+# In[337]:
+
+
+x = cost_per_patient['Total Cost Per Patient'].values
+
+bin_values = np.arange(start=0, stop=(cost_per_patient['Total Cost Per Patient'].max()), step=2)
+
+plt.figure(figsize=(8, 6))
+plt.hist(x, bins=bin_values, color='royalblue')
+plt.xlabel("Monthly Prescription Spending Per Patient")
+plt.ylabel("Frequency")
+
+min_x = cost_per_patient['Total Cost Per Patient'].quantile(.01)
+max_x = cost_per_patient['Total Cost Per Patient'].quantile(.99)
+plt.xlim(min_x, max_x)
+plt.title("Histogram: GP Practice Monthly Total Prescription Spending Per Registered Patient")
+plt.show()
+
+
+# ### Question 5: Use descriptive statistics to show how your assigned city compares to the national level.
+
+# In[26]:
+
+
+#Calculate the cost per patient in Bristol and on the national level.
+bristol_totperpatient = (bristol_data2['Total Cost Per Practice'].sum() / bristol_data2['Total_All'].sum()).round(2)
+national_totperpatient = (merged2['Total Cost Per Practice'].sum() / merged2['Total_All'].sum()).round(2)
+
+#Tabulate the values.
+totperpatient = pd.DataFrame({'Level' : pd.Categorical(["Bristol", "National"]),
+                              'Total Cost Per Patient' : pd.Series([bristol_totperpatient, national_totperpatient])})
+
+totperpatient = totperpatient[['Level', 'Total Cost Per Patient']]
+totperpatient
+
+
+# In[27]:
+
+
+#Create a bar chart to compare the total cost per patient in Bristol and on the national level.
+ax4 = totperpatient[['Level', 'Total Cost Per Patient']].plot(kind='bar', x='Level', y='Total Cost Per Patient', title="Bar Chart: Total Cost Per Patient In Bristol And On The National Level", stacked=False, color=['red', 'royalblue'], figsize=(8,6), legend=False, fontsize=8)
+ax4.set_xlabel("Level",fontsize=12)
+ax4.set_ylabel("Total Cost Per Patient",fontsize=12)
+
+
+# # Assignment C
+
+# ### Question 1: Identify the relative costs per patient for all statin prescriptions (simvastation, atorvastatin, rosuvastatin, pravastatin, fluvastatin) by using the dataset from December 2015.
+
+# In[28]:
+
+
+#Group prescribing_df by 'BNF Name'.
+prescribing_df2 = prescribing_df.groupby('BNF Name', as_index=False).sum()
+
+
+# In[29]:
+
+
+#Create dataframes by selecting data in prescribing_df2 containing each statin prescription.
+atorvastatin_data = prescribing_df2.loc[prescribing_df2['BNF Name'].str.contains('Atorvastatin'), ['BNF Name', 'Items', 'Act Cost']]
+fluvastatin_data = prescribing_df2.loc[prescribing_df2['BNF Name'].str.contains('Fluvastatin'), ['BNF Name', 'Items', 'Act Cost']]
+pravastatin_data = prescribing_df2.loc[prescribing_df2['BNF Name'].str.contains('Pravastatin'), ['BNF Name', 'Items', 'Act Cost']]
+rosuvastatin_data = prescribing_df2.loc[prescribing_df2['BNF Name'].str.contains('Rosuvastatin'), ['BNF Name', 'Items', 'Act Cost']]
+simvastatin_data = prescribing_df2.loc[prescribing_df2['BNF Name'].str.contains('Simvastatin'), ['BNF Name', 'Items', 'Act Cost']]
+
+#Add a new column 'Statin' in each dataframe.
+atorvastatin_data['Statin'] = "Atorvastatin"
+fluvastatin_data['Statin'] = "Fluvastatin"
+pravastatin_data['Statin'] = "Pravastatin"
+rosuvastatin_data['Statin'] = "Rosuvastatin"
+simvastatin_data['Statin'] = "Simvastatin"
+
+#Combine the dataframes.
+statins_data = atorvastatin_data.append([fluvastatin_data, pravastatin_data, rosuvastatin_data, simvastatin_data])
+
+
+# In[31]:
+
+
+#Group statins_data by 'Statin'.
+statins_data2 = statins_data.groupby('Statin', as_index=False).sum()
+
+#Add a new column 'Cost Per Patient' in statins_data2.
+statins_data2['Cost Per Patient'] = (statins_data2['Act Cost'] / statins_data2['Items']).round(2)
+
+#Tabulate the total cost per patient for each statin prescription.
+statins_data3 = pd.DataFrame({'Statin' : pd.Categorical(statins_data2['Statin']),
+                              'Total Cost Per Patient' : pd.Series(statins_data2['Cost Per Patient'])})
+
+statins_data3 = statins_data3[['Statin', 'Total Cost Per Patient']]
+statins_data3
+
+
+# ### Question 2: Identify for all GP-practice the associated Index of Multiple Deprivation (IMD) for each GP-Practice in your assigned city.
+
+# In[45]:
+
+
+#Merge practices_df and EDI_df.
+merged3 = pd.merge(practices_df[['Practice', 'Practice name', 'Postcode']], EDI_df)
+
+#Identify Bristol GP practices.
+bristol_data3 = merged3.loc[merged3['Postcode'].str.startswith('BS')]
+
+#Drop duplicates.
+bristol_sorted2 = bristol_data3.drop_duplicates(subset=['Practice'], keep='first', inplace=False)
+bristol_sorted2[['Practice', 'Practice name', 'Index of Multiple Deprivation Rank']].head()
+
+
+# ### Question 3: Use the entire national dataset and identify the lowest relative spenders of statins from the first decile and the highest relative spenders of statins from the last decile. Now determine for all identified GP-practices for both groups (lowest and the highest) the associated Index of Multiple Deprivation (IMD). Use these two groups to assess whether the IMD-score differs. Use descriptive statistics for your answer.
+
+# In[46]:
+
+
+#Merge merged3 and prescribing_df.
+merged4 = pd.merge(merged3, prescribing_df[['Practice', 'BNF Code', 'BNF Name', 'Act Cost']])
+
+#Identify statin prescription data in merged3.
+statins_data4 = merged4.loc[merged4['BNF Name'].str.contains('Atorvastatin' or 'Fluvastatin' or 'Pravastatin' or 'Rosuvastatin' or 'Simvastatin')]
+
+
+# In[177]:
+
+
+#Sort'Act Cost' in descending order and drop duplicates.
+statins_data4_sorted = statins_data4.sort_values('Act Cost', axis=0, ascending=False, kind='quicksort', na_position='last').drop_duplicates(subset=['Practice'], keep='first', inplace=False)
+
+#Identify the relative spenders of statin from the first and last decile.
+top_decile_cutoff = statins_data4_sorted['Act Cost'].quantile(0.90)
+bottom_decile_cutoff = statins_data4_sorted['Act Cost'].quantile(0.10)
+
+relativespenders_top = statins_data4_sorted.loc[statins_data4_sorted['Act Cost'] >= top_decile_cutoff]
+relativespenders_bottom = statins_data4_sorted.loc[statins_data4_sorted['Act Cost'] <= bottom_decile_cutoff]
+
+
+# In[54]:
+
+
+relativespenders_top[['Practice', 'Practice name', 'Act Cost']].tail(10)
+
+
+# In[176]:
+
+
+relativespenders_bottom[['Practice', 'Practice name', 'Act Cost']].head(10)
+
+
+# In[200]:
+
+
+#Tabulate the average, minimum, median, and maximum values of the IMD-scores of GP practices in the first decile and the last decile.
+y1 = relativespenders_top['Index of Multiple Deprivation Rank']
+y2 = relativespenders_bottom['Index of Multiple Deprivation Rank']
+
+imdscore_compare = pd.DataFrame({'Decile' : (['1.0', '10.0']),
+                                 'Average' : ([y1.mean(), y2.mean()]),
+                                 'Minimum' : ([y1.min(), y2.min()]),
+                                 'Median' : ([y1.median(), y2.median()]),
+                                 'Maximum' : ([y1.max(), y2.max()])})
+
+imdscore_compare = (imdscore_compare[['Decile', 'Average', 'Minimum', 'Median', 'Maximum']]).round()
+imdscore_compare
+
+
+# In[310]:
+
+
+#Create a scatter plot to compare the IMD-score between GP practices in the first decile and the last decile.
+y1 = (relativespenders_top['Practice'], relativespenders_top['Index of Multiple Deprivation Rank'])
+y2 = (relativespenders_bottom['Practice'], relativespenders_bottom['Index of Multiple Deprivation Rank'])
+
+data = (y1, y2)
+colours = ("red", "blue")
+groups = ("1.0", "10.0") 
+
+
+fig = plt.figure(figsize=(8, 6))
+ax5 = fig.add_subplot(1, 1, 1, axisbg="1.0")
+ 
+for data, color, group in zip(data, colours, groups):
+    x, y = data
+    ax5.scatter(x, y, alpha=0.8, c=color, edgecolors='none', s=30, label=group)
+    
+ax5.set_xlabel("Decile",fontsize=12)
+ax5.set_ylabel("Index of Multiple Deprivation Rank",fontsize=12)
+ax5.set_xticklabels([])
+
+plt.title('Box Plot: IMD-Score Among GP Practices In The First And Last Deciles')
+plt.legend(loc=2)
+plt.show()
+
+
+# ### Question 4: Identify for all GP-practices the associated nine English regions. Identify for each region the associated 75 mortality rate for cardiovascular diseases for the year 2015.
+
+# In[389]:
+
+
+#Create new postcode column in practices_df with no spaces.
+practices_df['Postcode2'] = practices_df['Postcode'].str.replace(" ", "")
+
+#Merge practices_df and ONS_df.
+merged5 = pd.merge(practices_df, ONS_df[['Postcode 1', 'Region Name']], left_on='Postcode2', right_on='Postcode 1')
+
+#Tabulate the GP practices and their ssociated regions.
+gppractice_region = pd.DataFrame({'Practice' : pd.Series(merged5['Practice']),
+                                  'Practice Name' : pd.Series(merged5['Practice name']),
+                                  'Region' : pd.Series(merged5['Region Name'])})
+
+gppractice_region = gppractice_region[['Practice', 'Practice Name', 'Region']]
+gppractice_region.head()
+
+
+# In[390]:
+
+
+#Select data from mortrate_df.
+mortrate_2015 = mortrate_df.loc[(mortrate_df['Breakdown'] == 'Region') & (mortrate_df['Year'] == 2015) & (mortrate_df['Gender'] == 'Person')]
+
+#Change the data types of 'Numerator and 'Denominator' from 'object' to 'int64'.
+mortrate_2015['Numerator'] = mortrate_2015['Numerator'].str.replace(',','').astype(int)
+mortrate_2015['Denominator'] = mortrate_2015['Denominator'].str.replace(',','').astype(int)
+
+#Group mortrate_2015 by 'Level description'.
+mortrate_2015_2 = mortrate_2015.groupby('Level description', as_index=False).sum()
+
+
+# In[391]:
+
+
+#Add a new column 'Mortality Rate' in mortrate_2015_2.
+mortrate_2015_2['Mortality Rate Per 100000'] = ((mortrate_2015_2['Numerator'] / mortrate_2015_2['Denominator'])*100000).round()
+
+#Tabulate the mortality rates by region.
+mortrate_2015_3 = pd.DataFrame({'Region' : pd.Categorical(mortrate_2015_2['Level description']),
+                                'Mortality Rate Per 100000' : pd.Series(mortrate_2015_2['Mortality Rate Per 100000'])})
+
+mortrate_2015_3 = mortrate_2015_3[['Region', 'Mortality Rate Per 100000']]
+mortrate_2015_3
+
+
+# ### Question 5: Visualize (using matplotlib) for each region spending for statins [x-axis] and the mortality rate [y-axis]. Assess whether relative speaking for statin prescriptions in each regions correlates with the mortality rate from cardiovascular diseases.
+
+# In[393]:
+
+
+#Merge merged5 and statins_data4.
+merged6 = pd.merge(merged5, statins_data4)
+
+#Group merged5 by 'Region Name'.
+statins_data5 = merged6.groupby('Region Name', as_index=False).sum()
+
+#Merge statins_data5 and mortrate_2015_3.
+merged7 = pd.merge(statins_data5[['Region Name', 'Act Cost']], mortrate_2015_3, left_on='Region Name', right_on='Region')
+
+
+# In[401]:
+
+
+#Data.
+x = merged7['Act Cost']
+y = merged7['Mortality Rate Per 100000']
+
+#Create scatter plot.
+fig = plt.figure(figsize=(8, 6))
+ax6 = fig.add_subplot(111)
+
+rects1 = ax6.scatter(x, y, color='royalblue')
+fit = np.polyfit(x, y, deg=1)
+ax6.plot(x, fit[0] * x + fit[1], color='black')
+ax6.set_title('Scatter Plot: Monthly Total Spending For Statins And The Mortality Rate Per 100000 For Each Region')
+ax6.set_xlabel("Monthly Total Spending For Statins",fontsize=12)
+ax6.set_ylabel("Mortality Rate Per 100000",fontsize=12)
+
+
+# # Assignment D
+
+# ### Question 1: Provide a visualisation of the seasonal patterns across all years.
+
+# In[404]:
+
+
+canadaFluTrends_df['Date'] = pd.to_datetime(canadaFluTrends_df['Date'])
+newzealandFluTrends_df['Date'] = pd.to_datetime(newzealandFluTrends_df['Date'])
+
+
+# In[405]:
+
+
+ax7 = newzealandFluTrends_df.plot(legend ='left', x='Date', y ='New Zealand', figsize=(15, 6), grid=True)
+
+canadaFluTrends_df.plot(x='Date', y ='Canada', ax=ax7)
+
+ax7.set_title("Line Chart: The Seasonal Patterns In Canada and New Zealand Across All Years")
+ax7.set_xlabel("Date", fontsize=12)
+ax7.set_ylabel("Frequency", fontsize=12)
+
+
+# ### Question 2: Calculate the yearly minimum and maximum for each country. Provide and plot a reasonable mathematical function that could be used as an approximation for the seasonal trend for each country.
+
+# In[420]:
+
+
+#Rename the column 'New Zealand' to 'New_Zealand' in newzealandFluTrends_df.
+newzealandFluTrends_df = newzealandFluTrends_df.rename(index=str, columns={"New Zealand": "New_Zealand"})
+
+
+# In[422]:
+
+
+#Add a new column for the years in canadaFluTrends_df.
+canadaFluTrends_df['year'] = canadaFluTrends_df['Date'].dt.year
+
+#Tabulate the yearly minimum and maximum for Canada.
+canada_info = canadaFluTrends_df.groupby('year').Canada.agg(['min', 'max'])
+canada_info
+
+
+# In[423]:
+
+
+#Add a new column for the years in newzealandFluTrends_df.
+newzealandFluTrends_df['year'] = newzealandFluTrends_df['Date'].dt.year
+
+#Tabulate the yearly minimum and maximum for each New Zealand.
+newzealand_info = newzealandFluTrends_df.groupby('year').New_Zealand.agg(['min', 'max'])
+newzealand_info
+
+
+# In[496]:
+
+
+ax8 = newzealandFluTrends_df.plot(legend ='left', x='Date', y ='New_Zealand', figsize=(15, 6), grid=False, color='orange')
+
+ax8.set_title("Line Chart: The Seasonal Patterns In New Zealand Across All Years")
+ax8.set_xlabel("Date", fontsize=12)
+ax8.set_ylabel("Frequency", fontsize=12)
+
+
+# In[497]:
+
+
+ax9 = canadaFluTrends_df.plot(legend ='left', x='Date', y ='Canada', figsize=(15, 6), grid=False)
+
+ax9.set_title("Line Chart: The Seasonal Patterns In Canada Across All Years")
+ax9.set_xlabel("Date", fontsize=12)
+ax9.set_ylabel("Frequency", fontsize=12)
+
+
+# In[ ]:
+
+
+from matplotlib import pyplot
+from statsmodels.tsa.seasonal import seasonal_decompose
+
+result1 = seasonal_decompose(newzealandFluTrends_df['Date'], model='additive', freq=1)
+result1.plot()
+pyplot.show()
+
+
+# In[ ]:
+
+
+result2 = seasonal_decompose(newzealandFluTrends_df['Date'], model='multiplicative', freq=1)
+result2.plot()
+pyplot.show()
+
+
+# In[ ]:
+
+
+result3 = seasonalcanadaFluTrends_df['Date'], model='additive', freq=1)
+result3.plot()
+pyplot.show()
+
+
+# In[ ]:
+
+
+result4 = seasonalcanadaFluTrends_df['Date'], model='multiplicative', freq=1)
+result4.plot()
+pyplot.show()
+
